@@ -1,5 +1,6 @@
 use secrecy::ExposeSecret;
 use sqlx::{Connection, PgConnection, PgPool};
+use zero2prod::email_client;
 use std::net::TcpListener;
 use zero2prod::configuration::{ get_configuration, DatabaseSettings};
 use zero2prod::startup::run;
@@ -48,8 +49,22 @@ async fn spawn_app() -> TestApp {
     // )
     // .await
     // .expect("Failed to connect to Postgres.");
-
-    let server = run(listener, connection_pool.clone())
+    let sender_email = configuration.email_client.sender()
+        .expect("Invalid email configuration");
+    
+    let timeout = configuration.email_client.timeout();
+    
+    let email_client = email_client::EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email,
+        configuration.email_client.authorization_token,
+        timeout
+    );
+    let server = run(
+            listener, 
+            connection_pool.clone(),
+            email_client
+        )
         .expect("Failed to start server");
     let _ = tokio::spawn(server);
     
@@ -60,11 +75,14 @@ async fn spawn_app() -> TestApp {
 }
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
-    let mut connection = PgConnection::connect(
-        &config.connection_string_without_db().expose_secret()
-    )
-    .await
-    .expect("Failed to connect to Postgres");
+    // let mut connection = PgConnection::connect(
+    //     &config.connection_string_without_db().expose_secret()
+    // )
+    // .await
+    // .expect("Failed to connect to Postgres");
+    let mut connection = PgConnection::connect_with(&config.without_db())
+        .await
+        .expect("Failed to connect to Postgres.");
 
     connection.execute(
             format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str()
@@ -72,11 +90,11 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .await
         .expect("Failed to create database.");
 
-    let connection_pool = PgPool::connect(
-        &config.connection_string().expose_secret()
+    let connection_pool = PgPool::connect_with(
+        config.with_db()
     )
-    .await
-    .expect("Failed to connect to Postgres.");
+        .await
+        .expect("Failed to connect to Postgres.");
     sqlx::migrate!("./migrations")
         .run(&connection_pool)
         .await
@@ -151,3 +169,53 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         );
     }
 }
+
+
+
+#[tokio::test]
+async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
+    let app = spawn_app().await;
+    let client = reqwest::Client::new();
+    let test_cases = vec![
+     ("name=&email=ursula_le_guin%40gmail.com", "empty name"),   
+     ("name=Ursula&email=", "empty email"),
+     ("name=Ursula&email=definitely-not-an-email", "invalid email"),
+    ];
+    for (body, description) in test_cases {
+        let response = client
+            .post(&format!("{}/subscriptions", &app.address))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .expect("Failed to execute request.");
+
+        assert_eq!(
+         200,
+         response.status().as_u16(),   
+         "The API did not return a 200 OK when the payload was {}.",
+         description
+        );
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

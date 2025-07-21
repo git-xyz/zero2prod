@@ -1,0 +1,16 @@
+application_port: 8080
+database:
+  host: "127.0.0.1"
+  port: 5432
+  username: "postgres"
+  password: "123456"
+  database_name: "rust_01"
+application:
+  port: 8000
+  host: "127.0.0.1"
+
+email_client:
+  base_url: "http://localhost:8000"
+  sender_email: "9lUwI@example.com"
+  authorization_token: "123456"
+  timeout_milliseconds: 10000

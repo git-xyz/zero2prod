@@ -1,13 +1,26 @@
 
 use actix_web::{web, HttpResponse};
 use sqlx::{ PgPool};
-use tracing::Instrument;
+// use tracing::Instrument;
+// use unicode_segmentation::UnicodeSegmentation;
+
+use crate::domain::{NewSubscriber, SubscriberName, SubscriberEmail};
 
 
 #[derive(serde::Deserialize)]
 pub struct FormData{
     pub email: String,
     pub name: String
+}
+
+impl TryFrom<FormData> for NewSubscriber{
+    type Error = String;
+
+    fn try_from(value: FormData) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(value.name)?;
+        let email = SubscriberEmail::parse(value.email)?;
+        Ok(NewSubscriber { email, name })
+    }
 }
 
 #[tracing::instrument(
@@ -24,18 +37,30 @@ pub async fn subscribe(
     pool: web::Data<PgPool>,
 ) -> HttpResponse {
 
-    // let _reqwest_span_guard = reqwest_span.enter();
-    // let query_span = tracing::info_span!(
-    //     "Saving new subscriber details in the database"
-    // );
+    // if !is_valid_name(&form.name){
+    //     return HttpResponse::BadRequest().finish();
+    // }
+    // let name = match SubscriberName::parse(form.0.name) {
+    //     Ok(name) => name,
+    //     Err(e) => {
+    //         tracing::error!("Invalid subscriber name: {:?}", e);
+    //         return HttpResponse::BadRequest().finish();
+    //     }
+    // };
+    // let email = match SubscriberEmail::parse(form.0.email) {
+    //     Ok(email) => email,
+    //     Err(e) => {
+    //         tracing::error!("Invalid subscriber email: {:?}", e);
+    //         return HttpResponse::BadRequest().finish();
+    //     }
+    // };
+    let new_subscriber = match form.0.try_into() {
+        Ok(form) => form,
+        Err(_e) => return HttpResponse::BadRequest().finish()
+    };
     
-    match insert_subscriber(&pool, &form)
-    .await
-    {
-        Ok(_) => {
-            // tracing::info!("request_id {} Saved new subscriber details", reqwest_id);
-            HttpResponse::Ok().finish()
-        },
+    match insert_subscriber(&pool, &new_subscriber).await {
+        Ok(_) => HttpResponse::Ok().finish(),
         Err(e) => {
             tracing::error!("Failed to execute query: {:?}", e);
             HttpResponse::InternalServerError().finish()
@@ -46,11 +71,12 @@ pub async fn subscribe(
 
 #[tracing::instrument(
     name = "Saving new subscriber details in the database",
-    skip(form, pool)
+    skip(pool, new_subscriber)
 )]
 pub async fn insert_subscriber(
     pool: &PgPool,
-    form: &FormData
+    // form: &FormData,
+    new_subscriber: &NewSubscriber,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
@@ -58,8 +84,8 @@ pub async fn insert_subscriber(
         VALUES ($1, $2, $3, $4)
         "#,
         uuid::Uuid::new_v4(),
-        form.email,
-        form.name,
+        new_subscriber.email.as_ref(),
+        new_subscriber.name.as_ref(),
         chrono::Utc::now(),
     )
     .execute(pool)
