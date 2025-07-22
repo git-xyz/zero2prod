@@ -1,5 +1,5 @@
 use zero2prod::configuration::get_configuration;
-use zero2prod::startup::{build};
+use zero2prod::startup::{build, Application};
 use zero2prod::telemetry::{get_subscribe, init_subscriber};
 
 
@@ -14,10 +14,12 @@ async fn main() -> Result<(), std::io::Error>{
     init_subscriber(subscriber);
 
     let configuration = get_configuration().expect("msg");
-    let server = build(configuration)
-        .await
-        .expect("Failed to build server");
-    server.await?;
+    // let server = build(configuration)
+    //     .await
+    //     .expect("Failed to build server");
+    // server.await?;
+    let application = Application::build(configuration).await?;
+    application.run_until_stopped().await?;
 
     Ok(())
 }
