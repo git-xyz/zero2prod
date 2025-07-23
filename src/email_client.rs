@@ -13,7 +13,7 @@ struct SendEmailRequest<'a> {
     html_body: &'a str,
     text_body: &'a str,
 }
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct EmailClient {
     http_client: Client,
     base_url: String,

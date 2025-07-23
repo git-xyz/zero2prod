@@ -22,7 +22,7 @@ tracing-bunyan-formatter = "0.3"
 #log = "0.4.17"
 #env_logger = "0.10.0"
 config = "0.13"
-actix-web = "4.10.2"
+actix-web = "4"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 serde = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
@@ -59,3 +59,4 @@ serde_json = "1.0"
 
 tokio = { version = "1", features = ["macros", "rt"] }
 wiremock = "0.5"
+linkify = "0.10"

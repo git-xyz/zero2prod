@@ -13,7 +13,7 @@ async fn main() -> Result<(), std::io::Error>{
     );
     init_subscriber(subscriber);
 
-    let configuration = get_configuration().expect("msg");
+    let configuration = get_configuration().expect("msg==========");
     // let server = build(configuration)
     //     .await
     //     .expect("Failed to build server");

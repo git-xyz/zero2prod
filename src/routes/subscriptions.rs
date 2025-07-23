@@ -4,10 +4,10 @@ use sqlx::{ PgPool};
 // use tracing::Instrument;
 // use unicode_segmentation::UnicodeSegmentation;
 
-use crate::domain::{NewSubscriber, SubscriberName, SubscriberEmail};
+use crate::{domain::{NewSubscriber, SubscriberEmail, SubscriberName}, email_client::{ EmailClient}};
 
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct FormData{
     pub email: String,
     pub name: String
@@ -17,6 +17,7 @@ impl TryFrom<FormData> for NewSubscriber{
     type Error = String;
 
     fn try_from(value: FormData) -> Result<Self, Self::Error> {
+        println!("Received form data: {:?}", value.email);
         let name = SubscriberName::parse(value.name)?;
         let email = SubscriberEmail::parse(value.email)?;
         Ok(NewSubscriber { email, name })
@@ -25,7 +26,7 @@ impl TryFrom<FormData> for NewSubscriber{
 
 #[tracing::instrument(
     name = "Adding a new subscriber",
-    skip(form, pool),
+    skip(form, pool, email_client),
     fields(
         // request_id = %uuid::Uuid::new_v4(),
         subscriber_email = %form.email,
@@ -35,37 +36,22 @@ impl TryFrom<FormData> for NewSubscriber{
 pub async fn subscribe(
     form: web::Form<FormData>,
     pool: web::Data<PgPool>,
+    email_client: web::Data<EmailClient>,
 ) -> HttpResponse {
-
-    // if !is_valid_name(&form.name){
-    //     return HttpResponse::BadRequest().finish();
-    // }
-    // let name = match SubscriberName::parse(form.0.name) {
-    //     Ok(name) => name,
-    //     Err(e) => {
-    //         tracing::error!("Invalid subscriber name: {:?}", e);
-    //         return HttpResponse::BadRequest().finish();
-    //     }
-    // };
-    // let email = match SubscriberEmail::parse(form.0.email) {
-    //     Ok(email) => email,
-    //     Err(e) => {
-    //         tracing::error!("Invalid subscriber email: {:?}", e);
-    //         return HttpResponse::BadRequest().finish();
-    //     }
-    // };
     let new_subscriber = match form.0.try_into() {
         Ok(form) => form,
         Err(_e) => return HttpResponse::BadRequest().finish()
     };
-    
-    match insert_subscriber(&pool, &new_subscriber).await {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(e) => {
-            tracing::error!("Failed to execute query: {:?}", e);
-            HttpResponse::InternalServerError().finish()
-        }
+    if insert_subscriber(&pool, &new_subscriber).await.is_err() {
+        return HttpResponse::InternalServerError().finish();
     }
+    if send_confirmation_email(&email_client, new_subscriber)
+        .await
+        .is_err() {
+            return HttpResponse::InternalServerError().finish();
+        }
+
+    HttpResponse::Ok().finish()
 }
 
 
@@ -95,4 +81,32 @@ pub async fn insert_subscriber(
         e
     })?;
     Ok(())
+}
+
+#[tracing::instrument(
+    name = "send a confirmation email",
+    skip(email_client, new_subscriber)
+)]
+pub async fn send_confirmation_email(
+    email_client: &EmailClient,
+    new_subscriber: NewSubscriber
+) -> Result<(), reqwest::Error> {
+    let confirmation_link = "https://example.com/confirm?subscription_token=some_token";
+    
+    let plain_body = format!(
+        "Welcome to our newsletter! Click here to confirm your subscription: {}",
+        confirmation_link
+    );
+    let html_body = format!(
+        "Welcome to our newsletter! <a href=\"{}\">Click here to confirm your subscription</a>",
+        confirmation_link
+    );
+    email_client
+        .send_email(
+            new_subscriber.email,
+             "Welcome!", 
+            &html_body,
+            &plain_body
+        )
+        .await
 }
